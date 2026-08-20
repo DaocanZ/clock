@@ -1,9 +1,8 @@
 @echo off
-rem 启动"我的时钟"应用（隔离 Anaconda 路径，避免 PySide6 DLL 冲突）
+rem Launch "My Clock" app. Restore this comment file to ASCII to avoid codepage issues.
 setlocal
-set "PATH=%PATH:;C:\ProgramData\anaconda3=%;;C:\ProgramData\anaconda3\Scripts=;"
 if not exist ".venv\Scripts\python.exe" (
-    echo [错误] 未找到虚拟环境，请先运行 install.bat
+    echo [ERROR] Virtual environment not found. Run install.bat first.
     pause
     exit /b 1
 )
