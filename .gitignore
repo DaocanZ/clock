@@ -2,3 +2,8 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# 打包产物
+build/
+dist/
+*.spec

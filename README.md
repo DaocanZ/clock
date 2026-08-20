@@ -60,6 +60,16 @@ python main.py
 - 任务清单与铃声设置自动保存在：
   `%APPDATA%\MyClock\MyClock\my_clock_data.json`
 
+## 打包成 exe（无需 Python 即可运行）
+
+如果你想把程序分享给不懂代码、甚至没装 Python 的普通用户，可以用 PyInstaller 打包成**单个 exe**：
+
+```bat
+build.bat
+```
+
+打包完成后得到 `dist\MyClock.exe`（约 50+ MB）。把它拷给其他人，**双击即可运行**，对方无需安装 Python 或任何依赖。构建产物 `build/`、`dist/` 已加入 `.gitignore`，不会提交到仓库。
+
 ## 项目结构
 
 ```
