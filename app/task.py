@@ -1,11 +1,13 @@
 """任务数据模型与全局倒计时计时逻辑。"""
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QStandardPaths, QTimer, Signal
 
 # 全局计时心跳间隔（毫秒）。越小显示越平滑。
 TICK_MS = 200
@@ -37,15 +39,63 @@ class TaskManager(QObject):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._tasks: list[Task] = []
+        self.ringtone_path: str = ""
+        self._file = self._data_file()
         self._tick = QTimer(self)
         self._tick.setInterval(TICK_MS)
         self._tick.timeout.connect(self._on_tick)
+        self.load()
+
+    @staticmethod
+    def _data_file() -> Path:
+        """返回持久化数据文件路径。"""
+        base = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
+        folder = Path(base)
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder / "my_clock_data.json"
+
+    # ---------- 持久化 ----------
+    def load(self) -> None:
+        """从本地文件恢复任务清单与铃声设置。"""
+        if not self._file.exists():
+            return
+        try:
+            data = json.loads(self._file.read_text(encoding="utf-8"))
+            for item in data.get("tasks", []):
+                task = Task(name=str(item.get("name", "未命名任务")))
+                task.total_seconds = int(item.get("total_seconds", 0))
+                task.remaining_ms = task.total_seconds * 1000
+                self._tasks.append(task)
+            self.ringtone_path = str(data.get("ringtone", ""))
+        except (json.JSONDecodeError, OSError, ValueError):
+            # 数据损坏时忽略，保留空清单
+            pass
+
+    def save(self) -> None:
+        try:
+            data = {
+                "tasks": [
+                    {"name": t.name, "total_seconds": t.total_seconds}
+                    for t in self._tasks
+                ],
+                "ringtone": self.ringtone_path,
+            }
+            self._file.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except OSError:
+            pass
+
+    def set_ringtone(self, path: str | None) -> None:
+        self.ringtone_path = path or ""
+        self.save()
 
     # ---------- 任务管理 ----------
     def add_task(self, name: str) -> Task:
         task = Task(name=name)
         self._tasks.append(task)
         self.taskAdded.emit(task)
+        self.save()
         return task
 
     def remove_task(self, task_id: str) -> None:
@@ -54,6 +104,7 @@ class TaskManager(QObject):
             return
         self._tasks.remove(task)
         self.taskRemoved.emit(task_id)
+        self.save()
 
     def get(self, task_id: str) -> Task | None:
         return next((t for t in self._tasks if t.id == task_id), None)
@@ -70,10 +121,12 @@ class TaskManager(QObject):
         task.remaining_ms = total_seconds * 1000
         task.running = False
         self.taskUpdated.emit(task)
+        self.save()
 
     def set_name(self, task: Task, name: str) -> None:
         task.name = name
         self.taskUpdated.emit(task)
+        self.save()
 
     def start(self, task: Task) -> None:
         if task.remaining_ms <= 0:

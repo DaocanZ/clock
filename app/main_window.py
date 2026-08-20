@@ -1,12 +1,20 @@
-"""主窗口：聚合任务清单页与计时页。"""
+"""主窗口：聚合任务清单页与计时页，并提供铃声设置菜单。"""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QMainWindow, QTabWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QMainWindow,
+    QMenuBar,
+    QMessageBox,
+    QTabWidget,
+)
 
 from .alert import TimerAlertDialog
 from .task import Task, TaskManager
 from .tasks_page import TasksPage
 from .timer_page import TimerPage
+
+AUDIO_FILTER = "音频文件 (*.wav *.mp3 *.ogg *.flac *.m4a);;所有文件 (*)"
 
 
 class MainWindow(QMainWindow):
@@ -23,6 +31,47 @@ class MainWindow(QMainWindow):
         tabs.addTab(TasksPage(self._manager), "任务清单")
         tabs.addTab(TimerPage(self._manager), "计时")
         self.setCentralWidget(tabs)
+        self._build_menu(self.menuBar())
+
+    def _build_menu(self, menubar: QMenuBar) -> None:
+        settings = menubar.addMenu("设置")
+
+        choose = settings.addAction("选择闹钟铃声…")
+        choose.triggered.connect(self._choose_ringtone)
+
+        ringtone = settings.addAction("恢复默认铃声")
+        ringtone.triggered.connect(self._clear_ringtone)
+
+        settings.addSeparator()
+
+        info = settings.addAction("关于")
+        info.triggered.connect(self._show_about)
+
+    def _choose_ringtone(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择闹钟铃声", "", AUDIO_FILTER
+        )
+        if not path:
+            return
+        self._manager.set_ringtone(path)
+        QMessageBox.information(
+            self,
+            "铃声已设置",
+            "铃声已保存。倒计时结束时将播放该音频。",
+        )
+
+    def _clear_ringtone(self) -> None:
+        self._manager.set_ringtone("")
+        QMessageBox.information(self, "铃声已恢复", "已恢复为默认系统提示音。")
+
+    def _show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "关于 我的时钟",
+            "我的时钟 —— 任务清单 + 倒计时闹钟\n\n"
+            "每个任务可设置倒计时，结束时弹出提醒并播放铃声。\n\n"
+            "数据自动保存在本机，重启应用不丢失。",
+        )
 
     def _on_timer_finished(self, task: Task) -> None:
-        TimerAlertDialog(task.name, self).exec()
+        TimerAlertDialog(task.name, self, self._manager.ringtone_path).exec()

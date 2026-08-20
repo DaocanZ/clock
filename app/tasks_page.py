@@ -26,6 +26,9 @@ class TaskItemWidget(QWidget):
         super().__init__(parent)
         self._task = task
         self._manager = manager
+        self._highlighted = False
+        self.setObjectName("taskRow")
+        self.setStyleSheet(self._row_style(False))
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 6, 10, 6)
@@ -77,10 +80,22 @@ class TaskItemWidget(QWidget):
         self._status_label.setStyleSheet("QLabel { color: #e3b341; font-weight: bold; }")
         layout.addWidget(self._status_label)
 
+    @staticmethod
+    def _row_style(highlighted: bool) -> str:
+        if highlighted:
+            return (
+                "QWidget#taskRow { background: #e6f4ea;"
+                " border: 2px solid #2ea043; border-radius: 8px; }"
+            )
+        return ""
+
     def refresh(self) -> None:
         """根据任务状态刷新显示。"""
         self._time_label.setText(format_ms(self._task.remaining_ms))
         running = self._task.running
+        if running != self._highlighted:
+            self._highlighted = running
+            self.setStyleSheet(self._row_style(running))
         self._min_spin.setEnabled(not running)
         self._sec_spin.setEnabled(not running)
         if running:
