@@ -52,19 +52,14 @@ class MiniClockWindow(QWidget):
         header.addWidget(expand_btn)
         layout.addLayout(header)
 
-        # 大字倒计时
+        # 大字倒计时（字体随窗口尺寸动态缩放）
         self._time_label = QLabel("00:00")
         self._time_label.setAlignment(Qt.AlignCenter)
-        self._time_label.setStyleSheet(
-            "QLabel { font-size: 56px; font-weight: bold; font-family: Consolas;"
-            " color: #1f6feb; }"
-        )
         layout.addWidget(self._time_label)
 
         # 下方一行：当前在做的任务提醒
         self._task_label = QLabel("暂无进行中任务")
         self._task_label.setAlignment(Qt.AlignCenter)
-        self._task_label.setStyleSheet("QLabel { font-size: 13px; color: #444; }")
         layout.addWidget(self._task_label)
 
         # 数据联动
@@ -72,6 +67,7 @@ class MiniClockWindow(QWidget):
         manager.timerFinished.connect(self._refresh)
         manager.taskAdded.connect(self._refresh)
         manager.taskRemoved.connect(self._refresh)
+        self._apply_scaled_font()
         self._refresh()
 
     # ---------- 事件 ----------
@@ -88,8 +84,25 @@ class MiniClockWindow(QWidget):
             self._task_label.setText("暂无进行中任务")
             self._time_label.setText("00:00")
             return
-        self._task_label.setText("当前正在做：" + task.name)
+        self._task_label.setText(task.name)
         self._time_label.setText(format_ms(task.remaining_ms))
+
+    def _apply_scaled_font(self) -> None:
+        """随窗口大小调整字体：计时为主（约半窗高），任务一行为辅。"""
+        h = self.height()
+        time_size = max(13, min(110, int(h * 0.48)))
+        self._time_label.setStyleSheet(
+            f"QLabel {{ font-size: {time_size}px; font-weight: bold;"
+            " font-family: Consolas; color: #1f6feb; }"
+        )
+        task_size = max(10, min(16, int(h * 0.09)))
+        self._task_label.setStyleSheet(
+            f"QLabel {{ font-size: {task_size}px; color: #444; }}"
+        )
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._apply_scaled_font()
 
     def _expand(self) -> None:
         self._on_expand()

@@ -11,6 +11,8 @@ from PySide6.QtCore import QObject, QStandardPaths, QTimer, Signal
 
 # 全局计时心跳间隔（毫秒）。越小显示越平滑。
 TICK_MS = 200
+# 新建任务的默认倒计时时长（秒）= 10 分钟
+DEFAULT_TOTAL_SECONDS = 600
 
 
 @dataclass
@@ -20,6 +22,7 @@ class Task:
     total_seconds: int = 0          # 配置的倒计时总秒数
     remaining_ms: int = 0           # 当前剩余毫秒
     running: bool = False           # 是否正在倒计时
+    completed: bool = False         # 是否已完成
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     end_monotonic: float = 0.0      # 倒计时到达的单调时钟（仅在 running 时有意义）
 
@@ -65,6 +68,7 @@ class TaskManager(QObject):
                 task = Task(name=str(item.get("name", "未命名任务")))
                 task.total_seconds = int(item.get("total_seconds", 0))
                 task.remaining_ms = task.total_seconds * 1000
+                task.completed = bool(item.get("completed", False))
                 self._tasks.append(task)
             self.ringtone_path = str(data.get("ringtone", ""))
         except (json.JSONDecodeError, OSError, ValueError):
@@ -75,7 +79,11 @@ class TaskManager(QObject):
         try:
             data = {
                 "tasks": [
-                    {"name": t.name, "total_seconds": t.total_seconds}
+                    {
+                        "name": t.name,
+                        "total_seconds": t.total_seconds,
+                        "completed": t.completed,
+                    }
                     for t in self._tasks
                 ],
                 "ringtone": self.ringtone_path,
@@ -93,10 +101,20 @@ class TaskManager(QObject):
     # ---------- 任务管理 ----------
     def add_task(self, name: str) -> Task:
         task = Task(name=name)
+        # 新任务默认 10 分钟，避免每次手动调整
+        self.set_duration(task, DEFAULT_TOTAL_SECONDS)
         self._tasks.append(task)
         self.taskAdded.emit(task)
         self.save()
         return task
+
+    def mark_complete(self, task: Task, completed: bool) -> None:
+        """标记任务完成/取消完成。标记完成时暂停正在进行的倒计时。"""
+        task.completed = bool(completed)
+        if task.completed and task.running:
+            self.pause(task)
+        self.taskUpdated.emit(task)
+        self.save()
 
     def remove_task(self, task_id: str) -> None:
         task = next((t for t in self._tasks if t.id == task_id), None)
@@ -129,6 +147,9 @@ class TaskManager(QObject):
         self.save()
 
     def start(self, task: Task) -> None:
+        # 对已完成的任务重新开始视为继续（取消完成状态）
+        if task.completed:
+            task.completed = False
         if task.remaining_ms <= 0:
             task.remaining_ms = task.total_seconds * 1000
         task.remember_end()

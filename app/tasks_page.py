@@ -74,6 +74,10 @@ class TaskItemWidget(QWidget):
         self._reset_btn.clicked.connect(lambda: self._manager.reset(self._task))
         layout.addWidget(self._reset_btn)
 
+        self._done_btn = QPushButton()
+        self._done_btn.clicked.connect(self._on_toggle_done)
+        layout.addWidget(self._done_btn)
+
         delete_btn = QPushButton("删除")
         delete_btn.setToolTip("删除此任务")
         delete_btn.clicked.connect(lambda: self.deleteRequested.emit(self._task.id))
@@ -91,6 +95,9 @@ class TaskItemWidget(QWidget):
                 " border: 2px solid #2ea043; border-radius: 8px; }"
             )
         return ""
+
+    def _on_toggle_done(self) -> None:
+        self._manager.mark_complete(self._task, not self._task.completed)
 
     def _sync_duration_spins(self) -> None:
         """把任务的总时长同步到本行动 时 分 秒控件（抑制回环）。"""
@@ -116,14 +123,34 @@ class TaskItemWidget(QWidget):
         """根据任务状态刷新显示。"""
         self._time_label.setText(format_ms(self._task.remaining_ms))
         running = self._task.running
-        if running != self._highlighted:
-            self._highlighted = running
-            self.setStyleSheet(self._row_style(running))
-        self._min_spin.setEnabled(not running)
-        self._sec_spin.setEnabled(not running)
-        if not running:
+        done = self._task.completed
+
+        # 已完成：灰色去强调、取消绿色高亮
+        highlight = running and not done
+        if highlight != self._highlighted:
+            self._highlighted = highlight
+            self.setStyleSheet(self._row_style(highlight))
+
+        # 名称样式：已完成加删除线
+        font = self._input.font()
+        font.setStrikeOut(done)
+        self._input.setFont(font)
+
+        # 按钮：已完成时禁用计时控件，按钮切换为"恢复"
+        enable = not running and not done
+        self._min_spin.setEnabled(enable)
+        self._sec_spin.setEnabled(enable)
+        self._toggle_btn.setEnabled(not done)
+        self._reset_btn.setEnabled(not done)
+        self._done_btn.setText("恢复" if done else "完成")
+        if not running and not done:
             self._sync_duration_spins()
-        if running:
+
+        if done:
+            self._toggle_btn.setText("开始")
+            self._status_label.setText("已完成")
+            self._status_label.setStyleSheet("QLabel { color: #9aa5b1; font-weight: bold; }")
+        elif running:
             self._toggle_btn.setText("暂停")
             self._status_label.setText("进行中…")
             self._status_label.setStyleSheet("QLabel { color: #2ea043; font-weight: bold; }")
