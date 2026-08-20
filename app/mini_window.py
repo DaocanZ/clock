@@ -1,4 +1,8 @@
-"""前置小窗：始终置顶的小屏倒计时面板，可自由调整大小。"""
+"""前置小窗：模拟微软时钟的"紧凑模式"。
+
+主窗口和小窗是互斥显示的两种形态：切到小窗时隐藏主窗口、显示始终置顶的小窗；
+小窗内含"回到主窗口"按钮，一键切回。小窗直接展示任务清单内容（含增删、计时控制）。
+"""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
@@ -10,82 +14,50 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .task import TaskManager, format_ms
+from .task import TaskManager
+from .tasks_page import TasksPage
 
 
 class MiniClockWindow(QWidget):
-    """始终置顶的小窗，展示最近将结束的进行中任务倒计时。"""
+    """始终置顶、可缩放的小窗，展示任务清单全内容。"""
 
     def __init__(
         self,
         manager: TaskManager,
-        activate_main,
+        on_expand: callable,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._manager = manager
-        self._activate_main = activate_main
+        self._on_expand = on_expand
 
-        self.setWindowTitle("计时小屏")
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
-        self.setMinimumSize(150, 90)
-        self.resize(230, 130)
+        self.setWindowTitle("我的时钟 · 小窗")
+        # Qt.Tool：任务栏不出现独立条目；WindowStaysOnTopHint：始终置顶
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.resize(340, 480)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setContentsMargins(8, 6, 8, 8)
         layout.setSpacing(6)
 
-        self._task_label = QLabel("暂无可显示任务")
-        self._task_label.setAlignment(Qt.AlignCenter)
-        self._task_label.setStyleSheet("QLabel { font-size: 12px; color: #666; }")
-        layout.addWidget(self._task_label)
+        header = QHBoxLayout()
+        title = QLabel("小窗模式")
+        title.setStyleSheet("QLabel { font-weight: bold; font-size: 13px; }")
+        header.addWidget(title)
+        header.addStretch(1)
+        expand_btn = QPushButton("⌂ 回到主窗口")
+        expand_btn.clicked.connect(self._expand)
+        header.addWidget(expand_btn)
+        layout.addLayout(header)
 
-        self._time_label = QLabel("00:00")
-        self._time_label.setAlignment(Qt.AlignCenter)
-        self._time_label.setStyleSheet(
-            "QLabel { font-size: 34px; font-weight: bold; font-family: Consolas;"
-            " color: #1f6feb; }"
-        )
-        layout.addWidget(self._time_label)
+        # 直接复用任务清单页，展示全部任务内容与计时控制
+        self._tasks_page = TasksPage(manager, self)
+        layout.addWidget(self._tasks_page, 1)
 
-        buttons = QHBoxLayout()
-        open_btn = QPushButton("打开主窗口")
-        open_btn.clicked.connect(self._on_open_main)
-        buttons.addWidget(open_btn)
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(self.hide)
-        buttons.addWidget(close_btn)
-        layout.addLayout(buttons)
-
-        # 数据联动
-        manager.taskUpdated.connect(self._refresh)
-        manager.timerFinished.connect(self._refresh)
-        manager.taskAdded.connect(self._refresh)
-        manager.taskRemoved.connect(self._refresh)
-        self._refresh()
-
-    # ---------- 事件 ----------
-    def _active_task(self):
-        """返回当前需要展示的倒计时任务。"""
-        running = [t for t in self._manager.tasks if t.running]
-        if not running:
-            return None
-        # 展示最近将结束（剩余最少）的那个
-        return min(running, key=lambda t: t.remaining_ms)
-
-    def _refresh(self, *_args) -> None:
-        task = self._active_task()
-        if task is None:
-            self._task_label.setText("暂无进行中任务")
-            self._time_label.setText("00:00")
-            return
-        self._task_label.setText(task.name)
-        self._time_label.setText(format_ms(task.remaining_ms))
-
-    def _on_open_main(self) -> None:
-        self._activate_main()
+    def _expand(self) -> None:
+        self._on_expand()
 
     def closeEvent(self, event) -> None:
-        # 关闭小窗只隐藏，不影响主窗口
-        self.hide()
+        # 关闭小窗即回到主窗口，而不是退出
+        self._on_expand()
         event.ignore()

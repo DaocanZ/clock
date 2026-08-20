@@ -43,7 +43,17 @@ class MainWindow(QMainWindow):
         self.centralWidget().setMinimumSize(MIN_WINDOW_SIZE[0], MIN_WINDOW_SIZE[1])
         if self.layout() is not None:
             self.layout().setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
+        self._build_toolbar()
         self._build_menu(self.menuBar())
+
+    def _build_toolbar(self) -> None:
+        """顶部工具条：提供醒目的"切换小窗"按钮（模仿微软时钟紧凑模式）。"""
+        tb = self.addToolBar("视图")
+        tb.setMovable(False)
+        tb.setFloatable(False)
+        toggle = tb.addAction("⤢ 切换小窗")
+        toggle.setToolTip("切换到始终置顶的小窗，小窗内可再回到主窗口")
+        toggle.triggered.connect(self._toggle_mini)
 
     def _build_menu(self, menubar: QMenuBar) -> None:
         settings = menubar.addMenu("设置")
@@ -56,7 +66,7 @@ class MainWindow(QMainWindow):
 
         settings.addSeparator()
 
-        mini = settings.addAction("显示 / 关闭前置小窗")
+        mini = settings.addAction("切换小窗模式")
         mini.triggered.connect(self._toggle_mini)
 
         settings.addSeparator()
@@ -91,15 +101,24 @@ class MainWindow(QMainWindow):
         )
 
     def _toggle_mini(self) -> None:
+        """在主窗口与小窗之间互斥切换（两者不同时出现）。"""
         if self._mini is not None and self._mini.isVisible():
-            self._mini.hide()
-            return
+            self._exit_mini()
+        else:
+            self._enter_mini()
+
+    def _enter_mini(self) -> None:
         if self._mini is None:
-            self._mini = MiniClockWindow(self._manager, self._activate_main, self)
+            self._mini = MiniClockWindow(self._manager, self._exit_mini)
+        # 隐藏主窗口，显示始终置顶小窗
+        self.hide()
         self._mini.show()
         self._mini.raise_()
 
-    def _activate_main(self) -> None:
+    def _exit_mini(self) -> None:
+        # 隐藏小窗，切回主窗口
+        if self._mini is not None:
+            self._mini.hide()
         self.showNormal()
         self.raise_()
         self.activateWindow()
