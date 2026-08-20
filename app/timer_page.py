@@ -22,7 +22,7 @@ class TimerPage(QWidget):
         super().__init__(parent)
         self._manager = manager
         self._selected_id: str | None = None
-        self._last_remaining_ms: int = 0
+        self._suppress = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 20, 20, 20)
@@ -39,19 +39,18 @@ class TimerPage(QWidget):
         self._combo.currentIndexChanged.connect(self._on_selection_changed)
         picker.addWidget(self._combo, 1)
 
+        # 时长控件直接绑定任务 total_seconds，和任务清单页同步
         picker.addWidget(QLabel("时长："))
         self._min_spin = QSpinBox()
         self._min_spin.setRange(0, 999)
         self._min_spin.setSuffix(" 分")
+        self._min_spin.valueChanged.connect(self._on_duration_editing)
         picker.addWidget(self._min_spin)
         self._sec_spin = QSpinBox()
         self._sec_spin.setRange(0, 59)
         self._sec_spin.setSuffix(" 秒")
+        self._sec_spin.valueChanged.connect(self._on_duration_editing)
         picker.addWidget(self._sec_spin)
-
-        apply_btn = QPushButton("应用时长")
-        apply_btn.clicked.connect(self._apply_duration)
-        picker.addWidget(apply_btn)
         root.addLayout(picker)
 
         # 大屏倒计时区
@@ -119,15 +118,13 @@ class TimerPage(QWidget):
             self._countdown_label.setText("00:00")
             return
         self._task_label.setText(task.name)
-        if not task.running and task.remaining_ms <= 0:
-            # 未设置时长则读取当前输入框
-            self._min_spin.setValue(task.total_seconds // 60)
-            self._sec_spin.setValue(task.total_seconds % 60)
+        self._sync_duration_spins(task)
         self._render(task)
 
     def _on_task_updated(self, task: Task) -> None:
         if task.id == self._selected_id:
             self._task_label.setText(task.name)
+            self._sync_duration_spins(task)
             self._render(task)
 
     def _selected(self) -> Task | None:
@@ -135,20 +132,41 @@ class TimerPage(QWidget):
             return None
         return self._manager.get(self._selected_id)
 
-    def _apply_duration(self) -> None:
+    # ---------- 时长同步 ----------
+    def _sync_duration_spins(self, task: Task | None) -> None:
+        """把任务总时长同步到本页 分/秒 控件（抑制回环）。运行中禁用。"""
+        if task is None or task.running:
+            self._min_spin.setEnabled(False)
+            self._sec_spin.setEnabled(False)
+            return
+        self._min_spin.setEnabled(True)
+        self._sec_spin.setEnabled(True)
+        mins, secs = task.total_seconds // 60, task.total_seconds % 60
+        self._suppress = True
+        if self._min_spin.value() != mins:
+            self._min_spin.setValue(mins)
+        if self._sec_spin.value() != secs:
+            self._sec_spin.setValue(secs)
+        self._suppress = False
+
+    def _on_duration_editing(self) -> None:
+        if self._suppress:
+            return
         task = self._selected()
-        if task is None:
+        if task is None or task.running:
             return
         total = self._min_spin.value() * 60 + self._sec_spin.value()
-        self._manager.set_duration(task, total)
-        self._render(task)
+        if total != task.total_seconds:
+            self._manager.set_duration(task, total)
 
     def _on_toggle(self) -> None:
         task = self._selected()
         if task is None:
             return
         if task.total_seconds <= 0:
-            self._apply_duration()
+            # 从当前输入应用时长（valueChanged 通常已同步，这里兜底）
+            if not task.running:
+                self._on_duration_editing()
             task = self._selected()
             if task is None or task.total_seconds <= 0:
                 return

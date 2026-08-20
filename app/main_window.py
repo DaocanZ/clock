@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QFileDialog,
+    QLayout,
     QMainWindow,
     QMenuBar,
     QMessageBox,
@@ -10,11 +11,15 @@ from PySide6.QtWidgets import (
 )
 
 from .alert import TimerAlertDialog
+from .mini_window import MiniClockWindow
 from .task import Task, TaskManager
 from .tasks_page import TasksPage
 from .timer_page import TimerPage
 
 AUDIO_FILTER = "音频文件 (*.wav *.mp3 *.ogg *.flac *.m4a);;所有文件 (*)"
+
+# 允许窗口自由缩放的最小尺寸（接近零）
+MIN_WINDOW_SIZE = (0, 0)
 
 
 class MainWindow(QMainWindow):
@@ -22,15 +27,22 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("我的时钟")
         self.resize(760, 560)
+        # 取消最小尺寸限制：允许自由拉伸到很小
+        self.setMinimumSize(MIN_WINDOW_SIZE[0], MIN_WINDOW_SIZE[1])
 
         self._manager = TaskManager(self)
         # 任何任务倒计时结束都弹出闹钟提醒
         self._manager.timerFinished.connect(self._on_timer_finished)
+        self._mini: MiniClockWindow | None = None
 
         tabs = QTabWidget()
         tabs.addTab(TasksPage(self._manager), "任务清单")
         tabs.addTab(TimerPage(self._manager), "计时")
         self.setCentralWidget(tabs)
+        # 取消最小尺寸限制：布局不强制派生最小尺寸，允许任意缩小
+        self.centralWidget().setMinimumSize(MIN_WINDOW_SIZE[0], MIN_WINDOW_SIZE[1])
+        if self.layout() is not None:
+            self.layout().setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
         self._build_menu(self.menuBar())
 
     def _build_menu(self, menubar: QMenuBar) -> None:
@@ -41,6 +53,11 @@ class MainWindow(QMainWindow):
 
         ringtone = settings.addAction("恢复默认铃声")
         ringtone.triggered.connect(self._clear_ringtone)
+
+        settings.addSeparator()
+
+        mini = settings.addAction("显示 / 关闭前置小窗")
+        mini.triggered.connect(self._toggle_mini)
 
         settings.addSeparator()
 
@@ -72,6 +89,20 @@ class MainWindow(QMainWindow):
             "每个任务可设置倒计时，结束时弹出提醒并播放铃声。\n\n"
             "数据自动保存在本机，重启应用不丢失。",
         )
+
+    def _toggle_mini(self) -> None:
+        if self._mini is not None and self._mini.isVisible():
+            self._mini.hide()
+            return
+        if self._mini is None:
+            self._mini = MiniClockWindow(self._manager, self._activate_main, self)
+        self._mini.show()
+        self._mini.raise_()
+
+    def _activate_main(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
 
     def _on_timer_finished(self, task: Task) -> None:
         TimerAlertDialog(task.name, self, self._manager.ringtone_path).exec()

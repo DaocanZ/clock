@@ -27,6 +27,7 @@ class TaskItemWidget(QWidget):
         self._task = task
         self._manager = manager
         self._highlighted = False
+        self._suppress = False
         self.setObjectName("taskRow")
         self.setStyleSheet(self._row_style(False))
 
@@ -38,16 +39,18 @@ class TaskItemWidget(QWidget):
         self._input.editingFinished.connect(self._on_name_changed)
         layout.addWidget(self._input, 4)
 
-        # 时长设置：分 + 秒
+        # 时长设置：分 + 秒（直接绑定到任务的 total_seconds，改动即同步）
         self._min_spin = QSpinBox()
         self._min_spin.setRange(0, 999)
         self._min_spin.setSuffix(" 分")
         self._min_spin.setEnabled(not task.running)
+        self._min_spin.valueChanged.connect(self._on_duration_editing)
         layout.addWidget(self._min_spin)
         self._sec_spin = QSpinBox()
         self._sec_spin.setRange(0, 59)
         self._sec_spin.setSuffix(" 秒")
         self._sec_spin.setEnabled(not task.running)
+        self._sec_spin.valueChanged.connect(self._on_duration_editing)
         layout.addWidget(self._sec_spin)
         if task.total_seconds:
             self._min_spin.setValue(task.total_seconds // 60)
@@ -89,6 +92,26 @@ class TaskItemWidget(QWidget):
             )
         return ""
 
+    def _sync_duration_spins(self) -> None:
+        """把任务的总时长同步到本行动 时 分 秒控件（抑制回环）。"""
+        if self._task.running:
+            return
+        mins = self._task.total_seconds // 60
+        secs = self._task.total_seconds % 60
+        self._suppress = True
+        if self._min_spin.value() != mins:
+            self._min_spin.setValue(mins)
+        if self._sec_spin.value() != secs:
+            self._sec_spin.setValue(secs)
+        self._suppress = False
+
+    def _on_duration_editing(self) -> None:
+        if self._suppress or self._task.running:
+            return
+        total = self._min_spin.value() * 60 + self._sec_spin.value()
+        if total != self._task.total_seconds:
+            self._manager.set_duration(self._task, total)
+
     def refresh(self) -> None:
         """根据任务状态刷新显示。"""
         self._time_label.setText(format_ms(self._task.remaining_ms))
@@ -98,6 +121,8 @@ class TaskItemWidget(QWidget):
             self.setStyleSheet(self._row_style(running))
         self._min_spin.setEnabled(not running)
         self._sec_spin.setEnabled(not running)
+        if not running:
+            self._sync_duration_spins()
         if running:
             self._toggle_btn.setText("暂停")
             self._status_label.setText("进行中…")
