@@ -87,6 +87,9 @@ class TaskItemWidget(QWidget):
         self._status_label.setStyleSheet("QLabel { color: #e3b341; font-weight: bold; }")
         layout.addWidget(self._status_label)
 
+        # 构造完成后立即渲染初始状态（否则按钮文字等首次信号触发才显示）
+        self.refresh()
+
     @staticmethod
     def _row_style(highlighted: bool) -> str:
         if highlighted:
