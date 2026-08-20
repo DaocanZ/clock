@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -100,7 +101,10 @@ class TaskItemWidget(QWidget):
         return ""
 
     def _on_toggle_done(self) -> None:
-        self._manager.mark_complete(self._task, not self._task.completed)
+        becoming_done = not self._task.completed
+        self._manager.mark_complete(self._task, becoming_done)
+        if becoming_done:
+            self._show_complete_stats(self._task)
 
     def _sync_duration_spins(self) -> None:
         """把任务的总时长同步到本行动 时 分 秒控件（抑制回环）。"""
@@ -114,6 +118,40 @@ class TaskItemWidget(QWidget):
         if self._sec_spin.value() != secs:
             self._sec_spin.setValue(secs)
         self._suppress = False
+
+    @staticmethod
+    def _show_complete_stats(task: Task) -> None:
+        """完成任务时弹出的统计与鼓励对话框。"""
+        planned = task.total_seconds
+        actual = task.worked_ms / 1000.0
+        diff = int(actual - planned)  # 秒，正=超时，负=提前
+
+        lines = [f"<b>任务：</b>{task.name}", ""]
+        lines.append(f"计划时长　{format_ms(planned * 1000)}")
+        lines.append(f"实际用时　{format_ms(task.worked_ms)}")
+        lines.append("")
+
+        if planned <= 0:
+            remark, color = f"实际用时 {format_ms(task.worked_ms)}，辛苦了！", "#2ea043"
+        elif diff <= 0:
+            remark, color = (
+                f"按时/提前完成（比计划少 {format_ms(-diff * 1000)}），效率很高，继续保持！",
+                "#2ea043",
+            )
+        else:
+            remark, color = (
+                f"超出计划 {format_ms(diff * 1000)}，注意时间分配，下次做得更快一点！",
+                "#e3a52e",
+            )
+        result_html = (
+            "<h3 style='color:{};'>✅ 完成！</h3><p style='font-size:15px'>{}</p>"
+        ).format(color, remark)
+        msg = QMessageBox()
+        msg.setWindowTitle("任务完成")
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(result_html + "<br>" + "<br>".join(lines))
+        msg.exec()
 
     def _on_duration_editing(self) -> None:
         if self._suppress or self._task.running:
@@ -149,24 +187,25 @@ class TaskItemWidget(QWidget):
         if not running and not done:
             self._sync_duration_spins()
 
+        worked = "实际 " + format_ms(self._task.worked_ms)
         if done:
             self._toggle_btn.setText("开始")
-            self._status_label.setText("已完成")
+            self._status_label.setText(f"已完成 · {worked}")
             self._status_label.setStyleSheet("QLabel { color: #9aa5b1; font-weight: bold; }")
         elif running:
             self._toggle_btn.setText("暂停")
-            self._status_label.setText("进行中…")
+            self._status_label.setText(f"进行中 · {worked}")
             self._status_label.setStyleSheet("QLabel { color: #2ea043; font-weight: bold; }")
         elif self._task.running is False and self._task.remaining_ms > 0:
             self._toggle_btn.setText("继续")
-            self._status_label.setText("已暂停")
+            self._status_label.setText(f"已暂停 · {worked}")
             self._status_label.setStyleSheet("QLabel { color: #e3b341; font-weight: bold; }")
         else:
             self._toggle_btn.setText("开始")
             self._status_label.setText("")
             self._status_label.setStyleSheet("QLabel { color: #2ea043; font-weight: bold; }")
             if self._task.total_seconds and self._task.remaining_ms <= 0:
-                self._status_label.setText("已结束")
+                self._status_label.setText(f"已结束 · {worked}")
                 self._status_label.setStyleSheet("QLabel { color: #d1242f; font-weight: bold; }")
 
     def _on_toggle(self) -> None:

@@ -23,6 +23,7 @@ class Task:
     remaining_ms: int = 0           # 当前剩余毫秒
     running: bool = False           # 是否正在倒计时
     completed: bool = False         # 是否已完成
+    worked_ms: int = 0              # 实际用时累计（进行中才累加，不随重置清零）
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     end_monotonic: float = 0.0      # 倒计时到达的单调时钟（仅在 running 时有意义）
 
@@ -69,6 +70,7 @@ class TaskManager(QObject):
                 task.total_seconds = int(item.get("total_seconds", 0))
                 task.remaining_ms = task.total_seconds * 1000
                 task.completed = bool(item.get("completed", False))
+                task.worked_ms = int(item.get("worked_ms", 0))
                 self._tasks.append(task)
             self.ringtone_path = str(data.get("ringtone", ""))
         except (json.JSONDecodeError, OSError, ValueError):
@@ -83,6 +85,7 @@ class TaskManager(QObject):
                         "name": t.name,
                         "total_seconds": t.total_seconds,
                         "completed": t.completed,
+                        "worked_ms": t.worked_ms,
                     }
                     for t in self._tasks
                 ],
@@ -181,6 +184,10 @@ class TaskManager(QObject):
             if not task.running:
                 continue
             remaining = (task.end_monotonic - now) * 1000
+            # 实际用时累计：只累加倒计时真实流逝的时间
+            delta = task.remaining_ms - remaining
+            if delta > 0:
+                task.worked_ms += int(delta)
             if remaining <= 0:
                 task.remaining_ms = 0
                 task.running = False
